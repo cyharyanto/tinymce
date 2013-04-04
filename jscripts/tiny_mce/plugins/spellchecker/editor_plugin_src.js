@@ -472,12 +472,66 @@
 		init : function(ed, url) {
 			var res = this.parent(ed, url);
 			var t = this;
-				
+			
+			t.useWizard = ed.getParam('spellchecker_use_wizard');
+			t.spellcheckStartCallback = ed.getParam('spellchecker_start_callback');
+			t.spellcheckCompleteCallback = ed.getParam('spellchecker_complete_callback');
+			t.ignoreURLs = ed.getParam('spellchecker_ignore_urls');
+			
 			// Ignored element tag list, the default contains mostly presentational and commonly used tags in WYSIWYG formatting.
 			// It is used to avoid a single word but in two/more formats being split into two/more words. Format: comma separated.
 			t.ignoredElementTags = ed.getParam('spellchecker_ignored_element_tags', 'abbr,em,strong,b,i,u,small,s,big,strike,tt,font,span,sub,sup');
 			t.ignoredElementTags = t.ignoredElementTags.split(',');
+			
+			// Register commands, override the default one
+			ed.addCommand('mceSpellCheck', function() {
+				if (t.rpcUrl == '{backend}') {
 					
+					// Report back to Ciboodle platform
+					if (!t.active) {
+						if(this.spellcheckStartCallback) {
+							this.spellcheckStartCallback();
+						}
+					} else {
+						if(this.spellcheckCompleteCallback) {
+							this.spellcheckCompleteCallback(false);
+						}
+					}
+					
+					// Enable/disable native spellchecker
+					t.editor.getBody().spellcheck = t.active = !t.active;
+					return;
+				}
+
+				if (!t.active) {
+					// Report back go Ciboodle platoform
+					if(this.spellcheckStartCallback) {
+							this.spellcheckStartCallback();
+					}
+					
+					ed.setProgressState(1);
+					t._sendRPC('checkWords', [t.selectedLang, t._getWords()], function(r) {
+						if (r.length > 0) {
+							t.active = 1;
+							t._markWords(r);
+							ed.setProgressState(0);
+							ed.nodeChanged();
+						} else {
+							ed.setProgressState(0);
+
+							if (ed.getParam('spellchecker_report_no_misspellings', true))
+								ed.windowManager.alert('spellchecker.no_mpell');
+								
+							// Report back to Ciboodle platform
+							if(this.spellcheckCompleteCallback) {
+								this.spellcheckCompleteCallback(false);
+							}
+						}
+					});
+				} else
+					t._done();
+			});
+			
 			return res;
 		},
 		
@@ -809,6 +863,35 @@
 				return tinymce.dom.Event.cancel(e);
 			} else
 				m.hideMenu();
+		},
+		
+		// @Override
+		// Overriden to add ability to report back to Ciboodle platform
+		_done : function() {
+			var t = this, la = t.active, ed = t.editor, dom = ed.dom, hasMisspelling = false;
+
+			if (t.active) {
+				// Check if any misspelling left
+				each(dom.select('span'), function(n) {
+					if (n && dom.hasClass(n, 'mceItemHiddenSpellWord')) {
+						hasMisspeling = true;
+					}
+				});
+				
+				t.active = 0;
+				t._removeWords();
+
+				if (t._menu)
+					t._menu.hideMenu();
+
+				if (la)
+					t.editor.nodeChanged();
+					
+				// Report back to Ciboodle platform
+				if(this.spellcheckCompleteCallback) {
+					this.spellcheckCompleteCallback(hasMisspelling);
+				}
+			}
 		},
 		
 		/**
