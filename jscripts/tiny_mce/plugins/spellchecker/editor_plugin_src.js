@@ -719,6 +719,7 @@
 					}
 	
 					// Use original spellchecker algorithm to mark words, except for the last word.
+					rx.lastIndex = 0;
 					if (rx.test(v)) {
 						if (anyMisspell) {
 							// There's already misspelt word detected
