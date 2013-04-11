@@ -1,0 +1,39 @@
+.spellcheckWizard .textField {
+    width: 240px;
+}
+
+.spellcheckWizard .list {
+    width: 100%; /* Use 100% instead of px size or IE6 leaves a 2px gap */
+}
+
+.spellcheckWizard .optionMenu {
+    width: 100%; /* Use 100% instead of px size or IE6 leaves a 2px gap */
+}
+
+#cancel {
+    float: none;
+}
+
+td.componentCell, td.buttonCell {
+    vertical-align: top;
+}
+
+td.componentCell {
+    padding-top: 1px;
+}
+
+td.buttonCell {
+    padding-left: 2px;	
+}
+
+.hidden {
+    display: none;
+}
+
+#spellcheckwizard_suggestions {
+    padding-bottom: 3px;
+}
+
+.suggestions.controlRow td {
+    padding-bottom: 3px;
+}

@@ -470,8 +470,25 @@
 		
 		// @Override
 		init : function(ed, url) {
-			var res = this.parent(ed, url);
-			var t = this;
+			var t = this, cm;
+			
+			t.url = url;
+			t.editor = ed;
+			t.rpcUrl = ed.getParam("spellchecker_rpc_url", "{backend}");
+
+			if (t.rpcUrl == '{backend}') {
+				// Sniff if the browser supports native spellchecking (Don't know of a better way)
+				if (tinymce.isIE)
+					return;
+
+				t.hasSupport = true;
+
+				// Disable the context menu when spellchecking is active
+				ed.onContextMenu.addToTop(function(ed, e) {
+					if (t.active)
+						return false;
+				});
+			}
 			
 			t.useWizard = ed.getParam('spellchecker_use_wizard');
 			t.spellcheckStartCallback = ed.getParam('spellchecker_start_callback');
@@ -489,13 +506,9 @@
 					
 					// Report back to Ciboodle platform
 					if (!t.active) {
-						if(this.spellcheckStartCallback) {
-							this.spellcheckStartCallback();
-						}
+						t._callSpellcheckStartCallback();
 					} else {
-						if(this.spellcheckCompleteCallback) {
-							this.spellcheckCompleteCallback(false);
-						}
+						t._callSpellcheckCompleteCallback(false);
 					}
 					
 					// Enable/disable native spellchecker
@@ -505,9 +518,7 @@
 
 				if (!t.active) {
 					// Report back go Ciboodle platoform
-					if(this.spellcheckStartCallback) {
-							this.spellcheckStartCallback();
-					}
+					t._callSpellcheckStartCallback();
 					
 					ed.setProgressState(1);
 					t._sendRPC('checkWords', [t.selectedLang, t._getWords()], function(r) {
@@ -516,6 +527,11 @@
 							t._markWords(r);
 							ed.setProgressState(0);
 							ed.nodeChanged();
+							
+							if (t.useWizard) {
+								// Open the wizard
+								t._spellcheckWizard(r);
+							}
 						} else {
 							ed.setProgressState(0);
 
@@ -523,16 +539,57 @@
 								ed.windowManager.alert('spellchecker.no_mpell');
 								
 							// Report back to Ciboodle platform
-							if(this.spellcheckCompleteCallback) {
-								this.spellcheckCompleteCallback(false);
-							}
+							t._callSpellcheckCompleteCallback(false);
 						}
 					});
 				} else
 					t._done();
 			});
 			
-			return res;
+			if (ed.settings.content_css !== false)
+				ed.contentCSS.push(url + '/css/content.css');
+
+			ed.onClick.add(t._showMenu, t);
+			ed.onContextMenu.add(t._showMenu, t);
+			
+			// DEV-51640
+			if (!(document.all && document.querySelector && !document.addEventListener)) {
+                ed.onBeforeGetContent.add(function() {
+                    if (t.active)
+						t._removeWords();
+				});
+            }
+			
+			ed.onNodeChange.add(function(ed, cm) {
+				cm.setActive('spellchecker', t.active);
+			});
+
+			ed.onSetContent.add(function() {
+				t._done();
+			});
+			
+			// DEV-51640
+			if (!(document.all && document.querySelector && !document.addEventListener)) {
+                ed.onBeforeGetContent.add(function() {
+                    t._done();
+				});
+            }
+			
+			ed.onBeforeExecCommand.add(function(ed, cmd) {
+				if (cmd == 'mceFullScreen')
+					t._done();
+			});
+			
+			// Find selected language
+			t.languages = {};
+			each(ed.getParam('spellchecker_languages', '+English=en,Danish=da,Dutch=nl,Finnish=fi,French=fr,German=de,Italian=it,Polish=pl,Portuguese=pt,Spanish=es,Swedish=sv', 'hash'), function(v, k) {
+				if (k.indexOf('+') === 0) {
+					k = k.substring(1);
+					t.selectedLang = v;
+				}
+
+				t.languages[k] = v;
+			});
 		},
 		
 		// @Override
@@ -566,9 +623,6 @@
 		// Overriden to return word list which include word separated by ignored element tags
 		_getWords : function() {
 			var t = this, ed = this.editor, wl = [], tx = '', lo = {}, rawWords;
-			
-			// Normalize the body first
-			// ed.getBody().normalize();
 
 			// Get area text
 			this._walk(ed.getBody(), function(n) {
@@ -586,7 +640,7 @@
 				}
 			});
 			
-			tx = this._removeURLs(tx);
+			tx = this.removeURLs(tx);
 			rawWords = this._splitTextToWords(tx);
 
 			// Build word array and remove duplicates
@@ -608,8 +662,11 @@
 			var t = this, ed = t.editor, dom = ed.dom, se = ed.selection, r = se.getRng(true);
 
 			each(dom.select('span').reverse(), function(n) {
-				if (n && (dom.hasClass(n, 'mceItemHiddenSpellWord') || dom.hasClass(n, 'mceItemHidden'))) {
-					if (!w || t._findFirstWord(n) == w)
+				if (n && (dom.hasClass(n, 'mceItemHiddenSpellWord') ||
+					dom.hasClass(n, 'mceItemHidden') ||
+					(dom.hasClass(n, 'mceItemHiddenSpellWordTag')))) {
+					// Also remove those used by the wizard (spellwordtag)
+					if (!w || t.findWord(n) == w)
 						dom.remove(n, 1);
 				}
 			});
@@ -700,8 +757,16 @@
 							pos = v.indexOf('</mcespell>');
 							txt = v.substring(0, pos);
 							v = v.substring(pos+11);
-							// Add span element for the word
-							elem.appendChild(dom.create('span', {'class' : 'mceItemHiddenSpellWord'}, txt));
+							
+							if (t.useWizard) {
+								// With the spellcheck wizard, the underline is hidden
+								// and only shown when the wizard is pointing to current
+								// misspelling
+								elem.appendChild(dom.create('span', {'class' : 'mceItemHiddenSpellWordTag'}, txt));
+							} else {
+								// Else just underline the misspelt words
+								elem.appendChild(dom.create('span', {'class' : 'mceItemHiddenSpellWord'}, txt));
+							}
 						}
 						// Add text node for the rest of the content
 						if (v.length) {
@@ -732,11 +797,12 @@
 			}
 
 			if (dom.hasClass(wordSpan, 'mceItemHiddenSpellWord')) {
+				ed.toolbarClicked = true;
 				m.removeAll();
 				m.add({title : 'spellchecker.wait', 'class' : 'mceMenuItemTitle'}).setDisabled(1);
 
 				rng = dom.createRng();
-				t._sendRPC('getSuggestions', [t.selectedLang, t._findFirstWord(wordSpan, rng)], function(r) {
+				t.getSuggestions(t.selectedLang, t.findWord(wordSpan, rng), function(r) {
 					var ignoreRpc;
 
 					m.removeAll();
@@ -745,27 +811,10 @@
 						m.add({title : 'spellchecker.sug', 'class' : 'mceMenuItemTitle'}).setDisabled(1);
 						each(r, function(v) {
 							m.add({title : v, onclick : function() {
-								// Use the DOM range object instead of just dom.replace
-								var cn = rng.startContainer, sn = [];
+								// Replace a word
+								t.replaceWord(wordSpan, v);
 								
-								// Save the whole run of nodes except the first
-								while (cn != rng.endContainer) {
-									cn = t._getNextNode(cn);
-									sn.push(cn);
-								}
-								
-								// Replace the first node
-								cn = rng.startContainer.parentNode;
-								dom.replace(doc.createTextNode(v), cn);
-								
-								// Remove the remaining nodes
-								each(sn, function(n) {
-									if (dom.hasClass(n, 'mceItemHiddenSpellWord')) {
-										dom.remove(n);
-									}
-								});
 								se.collapse(true);
-								
 								t._checkDone();
 							}});
 						});
@@ -779,13 +828,13 @@
 						m.add({
 							title : 'spellchecker.ignore_word',
 							onclick : function() {
-								var word = t._findFirstWord(wordSpan), cn = rng.startContainer, sn = [];
+								var word = t.findWord(wordSpan), cn = rng.startContainer, sn = [];
 
 								// Use the DOM range object instead of just dom.remove
 
 								// Save the whole run of nodes except the first
 								while (cn != rng.endContainer) {
-									cn = t._getNextNode(cn);
+									cn = t.getNextNode(cn);
 									sn.push(cn);
 								}
 								
@@ -815,7 +864,7 @@
 						m.add({
 							title : 'spellchecker.ignore_words',
 							onclick : function() {
-								var word = t._findFirstWord(wordSpan);
+								var word = t.findWord(wordSpan);
 
 								t._removeWords(dom.decode(word));
 								t._checkDone();
@@ -835,13 +884,13 @@
 						m.add({
 							title : 'spellchecker.learn_word',
 							onclick : function() {
-								var word = t._findFirstWord(wordSpan);
+								var word = t.findWord(wordSpan);
 
 								t._removeWords(dom.decode(word));
 								t._checkDone();
 
 								ed.setProgressState(1);
-								t._sendRPC('learnWord', [t.selectedLang, word], function(r) {
+								t.learnWord(t.selectedLang, word, function(r) {
 									ed.setProgressState(0);
 								});
 							}
@@ -862,19 +911,20 @@
 
 				return tinymce.dom.Event.cancel(e);
 			} else
+				ed.toolbarClicked = false;
 				m.hideMenu();
 		},
 		
 		// @Override
 		// Overriden to add ability to report back to Ciboodle platform
 		_done : function() {
-			var t = this, la = t.active, ed = t.editor, dom = ed.dom, hasMisspelling = false;
+			var t = this, la = t.active, ed = t.editor, dom = ed.dom, hasMisspellings = false;
 
 			if (t.active) {
 				// Check if any misspelling left
 				each(dom.select('span'), function(n) {
 					if (n && dom.hasClass(n, 'mceItemHiddenSpellWord')) {
-						hasMisspeling = true;
+						hasMisspellings = true;
 					}
 				});
 				
@@ -888,10 +938,30 @@
 					t.editor.nodeChanged();
 					
 				// Report back to Ciboodle platform
-				if(this.spellcheckCompleteCallback) {
-					this.spellcheckCompleteCallback(hasMisspelling);
-				}
+				t._callSpellcheckCompleteCallback(hasMisspellings);
 			}
+		},
+		
+		// @Override
+		// Overriden to give better error message when the access isn't via Apache
+		_sendRPC : function(m, p, cb) {
+			var t = this;
+
+			JSONRequest.sendRPC({
+				url : t.rpcUrl,
+				method : m,
+				params : p,
+				success : cb,
+				error : function(e, x) {
+					t.editor.setProgressState(0);
+					// DEV-49761
+					if((!e  || !e.errstr) && (!x || !x.responseText)) {
+					   t.editor.windowManager.alert('Spell-checking requires connections to be made using an Apache web server. Please contact your System Administrator.');
+					} else {
+					   t.editor.windowManager.alert(e.errstr || ('Error response: ' + x.responseText));
+					}
+				}
+			});
 		},
 		
 		/**
@@ -937,32 +1007,6 @@
 		},
 		
 		/**
-		 * Function to return an array of URL regexes. 
-		 */
-		_getURLRegExes : function() {
-			if(!this.URLRegExes) {
-				var regExes = [];
-				regExes.push(new RegExp("http://.+?(?= |$)", "g"));
-				regExes.push(new RegExp("ftp://.+?(?= |$)", "g"));
-				regExes.push(new RegExp("file://.+?(?= |$)", "g"));
-				regExes.push(new RegExp("www\\..+?(?= |$)", "g"));
-				this.URLRegExes = regExes;
-			}
-			return this.URLRegExes;
-		},
-		
-		/**
-		 * Function to strip URL from the list of words 
-		 */
-		_removeURLs : function(text) {
-			var regExes = this._getURLRegExes(), i;
-			for(i = 0; i < regExes.length; i++) {
-				text = text.replace(regExes[i], "");
-			}
-			return text;
-		},
-		
-		/**
 		 * Function to return the whole word of the first word in a text
 		 * node except when there's a separator in the beginning of the node.
 		 * Also set the starting point and end point the given DOM Range object.
@@ -982,7 +1026,7 @@
 				if (w = s.match(/^\S+/)) {
 					// There is no separator
 					w = w[0];
-					while (this._getPrevNode(n) != t.editor.getBody()) {
+					while (this.getPrevNode(n) != t.editor.getBody()) {
 						if (el = n.previousSibling) {
 							if (!this._isInIgnoredElement(el)) {
 								// If the previous node in same DOM hierarchy is a block element
@@ -991,7 +1035,7 @@
 						}
 						
 						if (!sfound) {
-							n = this._getPrevNode(n);	// To the previous node						
+							n = this.getPrevNode(n);	// To the previous node						
 							if (n.nodeType == 3 && n.nodeValue.length > 0) {
 								s = this._stripOutSeparator(n.nodeValue);
 								// Previous node may contain other part if there's no separator in the end
@@ -1070,7 +1114,7 @@
 						rng.setEnd(n, w.length);
 					}
 					// To the next node
-					while ((n = this._getNextNode(n)) && !found) {
+					while ((n = this.getNextNode(n)) && !found) {
 						if (n.nodeType == 3 && n.nodeValue.length > 0) {
 							s = this._stripOutSeparator(n.nodeValue);
 							// Next node may contain other part if there's no separator in the beginning
@@ -1107,19 +1151,126 @@
 		},
 		
 		/**
+		 * Function to let Ciboodle platform know that the spellchecker is started.
+		 */
+		_callSpellcheckStartCallback : function() {
+			if(this.spellcheckStartCallback) {
+				this.spellcheckStartCallback();
+			}
+		},
+		
+		/**
+		 * Function to let Ciboodle platform know that the spellchecker is completed.
+		 */
+		_callSpellcheckCompleteCallback : function(hasMisspellings) {
+			if(this.spellcheckCompleteCallback) {
+				this.spellcheckCompleteCallback(hasMisspellings);
+			}
+		},
+		
+		/**
+		 * Function to open the wizard
+		 *
+		 * @param words misspelt words list
+		 */
+		_spellcheckWizard : function(words) {
+			var t = this;
+			var ed = t.editor;
+			
+			ed.toolbarClicked = true;
+			
+			var callback = { scope : t, func : t._done };
+			ed.windowManager.open({
+				file : t.url + '/spellcheckwizard.htm',
+				width : 352 + parseInt(ed.getLang('spellcheck.delta_width', 0), 10),
+				height : 336 + parseInt(ed.getLang('spellcheck.delta_height', 0), 10),
+				inline : 1
+			}, {
+				plugin_url : t.url,
+				plugin : t,
+				selectedLang: t.selectedLang,
+				wordNodes : t._getMisspelledNodes(),
+				misspelledWords: t.toMap(words),
+				callback : callback,
+				allowAddToDictionary : t.editor.getParam("spellchecker_enable_learn_rpc"),
+				mce_auto_focus : true
+			});
+		},
+		
+		/**
+		 * Function to return nodes which contains misspeled word.
+		 *
+		 * @return a list of nodes
+		 */
+		_getMisspelledNodes : function() {
+			var ed = this.editor, dom = ed.dom, rng = dom.createRng();
+			var nodes = [];
+			
+			this._walk(ed.getBody(), function(n) {
+				if (n.nodeType == 3 && n.parentNode) {
+					if (dom.hasClass(n.parentNode, 'mceItemHiddenSpellWordTag')) {
+						nodes.push(n);
+					}
+				}
+			});
+			
+			return nodes;
+		},
+		
+		/**
+		 * Function to convert array into true/false map.
+		 *
+		 * @param array the array to convert
+		 * @return object containing the map
+		 */
+		toMap : function(array) {
+			var map = {}, i;
+			for(i = 0; i < array.length; i++) {
+				var value = array[i];
+				map[value] = true;
+			}
+			return map;
+		},
+		
+		/**
+		 * Function to return an array of URL regexes. 
+		 */
+		getURLRegExes : function() {
+			if(!this.URLRegExes) {
+				var regExes = [];
+				regExes.push(new RegExp("http://.+?(?= |$)", "g"));
+				regExes.push(new RegExp("ftp://.+?(?= |$)", "g"));
+				regExes.push(new RegExp("file://.+?(?= |$)", "g"));
+				regExes.push(new RegExp("www\\..+?(?= |$)", "g"));
+				this.URLRegExes = regExes;
+			}
+			return this.URLRegExes;
+		},
+
+		/**
+		 * Function to strip URL from the list of words 
+		 */
+		removeURLs : function(text) {
+			var regExes = this.getURLRegExes(), i;
+			for(i = 0; i < regExes.length; i++) {
+				text = text.replace(regExes[i], "");
+			}
+			return text;
+		},
+		
+		/**
 		 * Function to get previous node
 		 * 
 		 * @param n node
+		 * @return node
 		 */
-		_getPrevNode : function(n) {
-			if (!n.previousSibling)
-			{
+		getPrevNode : function(n) {
+			if (!n.previousSibling) {
 				return n.parentNode;
 			}
 			else {
 				n = n.previousSibling;
-				while (n.lastChild)
-				{
+				while (n && n.lastChild) {
 					n = n.lastChild;
 				}
 				return n;
@@ -1130,8 +1281,9 @@
 		 * Function to get next node
 		 * 
 		 * @param n node
+		 * @return node
 		 */
-		_getNextNode : function(n) {
+		getNextNode : function(n) {
 			if (n.firstChild) {
 				return n.firstChild;
 			} else {
@@ -1144,7 +1296,314 @@
 					return n;
 				}
 			}
+		},
+		
+		/**
+		 * Function to return the whole word of word part contained in a text node.
+		 * Must be called on a node containing only one word, otherwise will return
+		 * only the whole word for the first word in the text node.
+		 * Also set the starting point and end point the given DOM Range object.
+		 * 
+		 * @param n node
+		 * @param rng DOM Range object to be set
+		 * 
+		 * @return the whole word
+		 */
+		findWord : function(n, rng) {
+			return this._findFirstWord(n, rng);
+		},
+		
+		/**
+		 * Function to get word suggestions from RPC.
+		 *
+		 * @param language currently used language
+		 * @param word base word to get the suggestion
+		 * @param callbackFunc function to call after the RPC returns
+		 */
+		getSuggestions : function(language, word, callbackFunc) {
+			var t = this;
+			t._sendRPC('getSuggestions', [language, word], callbackFunc);
+        },
+		
+		/**
+		 * Function to tell RPC to learn word
+		 *
+		 * @param language
+		 * @param word
+		 * @param callbackFunc
+		 */
+		learnWord : function(language, word, callbackFunc) {
+			var t = this;
+			t._sendRPC('learnWord', [language, word], callbackFunc);
+        },
+		
+		/**
+		 * Function to replace a misspelt word pointed by the node
+		 * Note: this assume the misspelt word already enclosed by
+		 * mceItemHiddenSpellWord span tag.
+		 *
+		 * @param node the node containing the word/part of word to be replaced
+		 * @param word the new word to replace the old one
+		 */
+		 replaceWord : function(node, word) {
+			var t = this, dom = t.editor.dom, rng = dom.createRng(), cn, sn = [];
+			
+			// Find the range containing the whole word
+			t.findWord(node, rng);
+			cn = rng.startContainer;
+			
+			// Save the whole run of nodes except the first
+			while (cn != rng.endContainer) {
+				cn = t.getNextNode(cn);
+				sn.push(cn);
+			}
+			
+			// Replace the first node
+			cn = rng.startContainer;
+			cn.nodeValue = word;
+			dom.remove(cn.parentNode, true);
+			
+			// Remove the remaining nodes
+			while (cn = sn.pop()) {
+				if (dom.hasClass(cn, 'mceItemHiddenSpellWord')) {
+					dom.remove(cn);
+				}
+			};
+		 },
+		 
+		/**
+		 * DEPRECATED FUNCTIONS
+		 * From TinyMCE 3.4.2 Ciboodle
+		 */
+		_replaceNodeWithText : function(node,v) {
+            var dom = this.editor.dom;
+            var newNode = dom.create('span', {'class' : 'mceItemHidden'}, v);
+            dom.replace(newNode, node);
+            return newNode;
+        },
+
+        _matchesAtLeastOne : function(text, regExes) {
+            var matches = false;
+            for(var i = 0; i < regExes.length; i++) {
+                var regEx = regExes[i];
+                if(regEx.test(text)) {
+                    matches = true;
+                    break;
+                }
+            }
+            return matches;
+       },
+
+       _replaceTextWithRegEx: function(text, regExes, replacementString) {
+           for(var i = 0; i < regExes.length; i++) {
+               var regEx = regExes[i];
+               text = text.replace(regEx, replacementString);
+           }
+           return text;
+       },
+
+       _spellWordTagNodeString : function(nodeValue) {
+           return '<span class="mceItemHiddenSpellWord">'+nodeValue+'</span>';
+       },
+
+        _markWordInNode : function(node, wordStartPos, word) {
+            var v = this._replaceNodeText(node, this._spellWordTagNodeString(word), wordStartPos, word.length);
+            return this._replaceNodeWithText(node, v);
+        },
+
+        _replaceNodeText : function(node, replacementText, wordStartPos, wordLength) {
+            return this._replaceText(node.nodeValue, replacementText, wordStartPos, wordLength, true);
+        },
+
+        _createTestRegExes : function(w) {
+            var re = this._getSeparators();
+
+            var r1 = this._createRegExWordBetweenSeparators(w, re);
+            var r2 = this._createRegExWordAtStart(w, re);
+            var r3 = this._createRegExWordAtEndWithOptionalSeparatorAfter(w, re);
+            var r4 = this._createRegExWordWithOptionalSeparatorAfterIsEntireString(w, re);
+            return [r1, r2, r3, r4];
+        },
+
+        _createReplaceRegExes : function(w) {
+            var re = this._getSeparators();
+
+            var r3 = this._createRegExWordAtEndWithOptionalSeparatorAfter(w, re);
+            var r5 = this._createRegExWordInMiddleWithSeparatorAfter(w, re);
+            return [r5, r3];
+        },
+        
+        _createRegExWordBetweenSeparators : function(w, re) {
+            return new RegExp('([' + re + '])(' + w + ')([' + re + '])', 'g');
+        },
+
+        _createRegExWordAtStart : function(w, re) {
+            return new RegExp('^(' + w + ')', 'g');
+        },
+
+        _createRegExWordAtEndWithOptionalSeparatorAfter : function(w, re) {
+            return new RegExp('(' + w + ')([' + re + ']?)$', 'g');
+        },
+
+        _createRegExWordWithOptionalSeparatorAfterIsEntireString : function(w, re) {
+            return new RegExp('^(' + w + ')([' + re + ']?)$', 'g');
+        },
+
+        _createRegExWordInMiddleWithSeparatorAfter : function(w, re) {
+            return new RegExp('(' + w + ')([' + re + '])', 'g');
+        },
+
+        _replaceText : function(text, replacementText, wordStartPos, wordLength, encodeEitherSide) {
+            var wordEndPos = wordStartPos+wordLength; // final letter in word+1
+
+            var textBeforeWord = text.substring(0, wordStartPos);
+            var word = replacementText;
+            var textAfterWord = text.substring(wordEndPos, text.length);
+
+            if(encodeEitherSide) {
+                textBeforeWord = this.editor.dom.encode(textBeforeWord);
+                textAfterWord = this.editor.dom.encode(textAfterWord);
+            }
+
+            return textBeforeWord+word+textAfterWord;
+        },
+
+        _createRegExNonSeparatorOnlyNotGlobal : function(re) {
+            return new RegExp('[^0-9' + re + ']+', '');
+        },
+		
+		// functions split out by Sword Ciboodle Dev
+		_getTextNodes : function() {
+			var ed = this.editor;
+			var nodes = [];
+			
+			this._walk(ed.getBody(), function(n) {
+				if (n.nodeType === 3) {
+				  n.nodeValue = n.nodeValue.replace(/[\s\u00a0]+/g, ' ');
+				  nodes.push(n);
+				}
+			});
+			
+			return nodes;
+		},
+		
+		_getWordsFromTextNode : function(node) {
+			var tx = this._normaliseText(node.nodeValue);
+			return tx.split(' ');
+		},
+		
+		_normaliseText : function(tx) {
+			tx = this._replaceSeparators(tx);
+			tx = this._singleSpaceWords(tx);
+			return tx;
+		},
+		
+		_replaceSeparators : function(tx) {
+			return tx.replace(new RegExp('([0-9]|[' + this._getSeparators() + '])', 'g'), ' ');
+		},
+		
+		_singleSpaceWords : function(tx) {
+			return tinymce.trim(tx.replace(/[\s\u00a0]+/g, ' '));
+		},
+
+		editorContainsHiddenSpellWord : function() {
+			var o = false;
+			var dom = this.editor.dom;
+				each(dom.select('span'), function(n) {
+				if (n && dom.hasClass(n, 'mceItemHiddenSpellWord')) {
+					o = true;
+					return false;
+				}
+			});
+			return o;
+		},
+
+		_spellcheckCommand : function(ui, params) {
+			var t = this;
+			var suppressAlerts;
+			if(params) {
+				suppressAlerts = !!params.suppressAlerts;
+			}
+			t._spellcheck(suppressAlerts);                
+		},
+		
+		_spellcheck : function(suppressAlerts) {
+			var t = this;
+			var ed = t.editor;
+			
+			if (t.rpcUrl == '{backend}') {
+				// Enable/disable native spellchecker
+				ed.getBody().spellcheck = t.active = !t.active;
+				return;
+			}
+			
+			if (!t.active) {
+				t._startSpellcheck(suppressAlerts);
+			} else {
+				t._endSpellcheck();
+			}
+		},
+		
+		_startSpellcheck : function(suppressAlerts) {
+			var t = this;
+			var ed = t.editor;
+			var rpcHandler;
+			
+			t._callSpellcheckStartCallback();
+			
+			var reportNoMisspellings = ed.getParam('spellchecker_report_no_misspellings', true);
+			
+			if(t.useWizard) {
+				rpcHandler = function(r) {
+					var hasMisspellings = r.length > 0;
+					if (hasMisspellings) {
+						t.active = 1;
+						t._spellcheckWizard(r);
+					}
+					else {
+						if(reportNoMisspellings && !suppressAlerts) {
+							ed.windowManager.alert('spellchecker.no_mpell');
+						}
+						t._callSpellcheckCompleteCallback(false);
+					}
+				};
+			}
+			else {
+				ed.setProgressState(1);
+				rpcHandler = function(r) {
+					var hasMisspellings = r.length > 0;
+					if (hasMisspellings) {
+						t.active = 1;
+						t._markWords(r);
+						ed.setProgressState(0);
+						ed.nodeChanged();
+					} else {
+						ed.setProgressState(0);
+						if(reportNoMisspellings && !suppressAlerts) {
+							ed.windowManager.alert('spellchecker.no_mpell');
+						}
+						t._callSpellcheckCompleteCallback(false);
+					}
+				};
+			}
+			t.checkWords(rpcHandler);
+		},
+		
+		_endSpellcheck : function() {
+			var t = this;
+			t._done();
+		},
+
+		checkWords : function(callbackFunc) {
+			var t = this;
+			var allWords = t._getWords();
+			t._sendRPC('checkWords', [t.selectedLang, allWords], callbackFunc);
 		}
+		
+		/**
+		 * END OF DEPRECATED FUNCTIONS
+		 * From TinyMCE 3.4.2 Ciboodle
+		 */
 		
 	});
 	

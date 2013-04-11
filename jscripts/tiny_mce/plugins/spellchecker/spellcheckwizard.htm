@@ -1,0 +1,89 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+	<title>{#spellchecker_dlg.title}</title>
+	<script type="text/javascript" src="../../tiny_mce_popup.js"></script>
+	<script type="text/javascript" src="../../utils/mctabs.js"></script>
+	<script type="text/javascript" src="../../utils/form_utils.js"></script>
+    <script type="text/javascript" src="js/spellcheckwizard.js"></script>
+    <link rel="stylesheet" type="text/css" href="css/spellcheckwizard.css" />
+</head>
+<body style="display:none;">
+<form onsubmit="return false;" action="#" class="spellcheckWizard">
+
+	<table border="0" cellspacing="0" cellpadding="0">
+	    <tr class="notInDictionary labelRow">
+	        <td class="labelCell">
+	           <label for="spellcheckwizard_notindictionary">{#spellchecker_dlg.notindictionary}</label>
+	        </td>
+        </tr>
+        <tr class="notInDictionary controlRow">
+            <td class="componentCell">
+                <input type="text" id="spellcheckwizard_notindictionary" name="spellcheckwizard_notindictionary" class="textField" readonly />
+            </td>
+            <td class="buttonCell">
+                <button class="button" id="ignore" onclick="SpellcheckWizard.onIgnore(); return false;" >
+                	<label for="ignore">{#spellchecker_dlg.ignore}</label>
+                </button>
+                
+                <button  class="button" id="ignoreAll" onclick="SpellcheckWizard.onIgnoreAll(); return false;" >
+                	<label for="ignoreAll">{#spellchecker_dlg.ignoreAll}</label>
+                </button>
+            </td>
+	    </tr>
+        <tr class="changeTo labelRow">
+            <td class="labelCell">
+               <label for="spellcheckwizard_changeto">{#spellchecker_dlg.changeto}</label>
+            </td>
+        </tr>
+        <tr class="changeTo controlRow">
+            <td class="componentCell">
+               <input type="text" class="mceFocus textField" id="spellcheckwizard_changeto" name="spellcheckwizard_changeto" />
+            </td>
+            <td class="buttonCell">
+                <button   class="button "id="change" onclick="SpellcheckWizard.onChange(); return false;" >
+                	<label for="change">{#spellchecker_dlg.change}</label>
+                </button>
+                <button class="button" id="changeAll" onclick="SpellcheckWizard.onChangeAll(); return false;" >
+                	<label for="changeAll">{#spellchecker_dlg.changeAll}</label>
+                </button>
+            </td>
+        </tr>
+        <tr class="suggestions labelRow">
+            <td class="labelCell">
+               <label for="spellcheckwizard_suggestions">{#spellchecker_dlg.suggestions}</label>
+            </td>
+        </tr>
+        <tr class="suggestions controlRow">
+            <td class="componentCell">
+               <select id="spellcheckwizard_suggestions" name="spellcheckwizard_suggestions" size="10" class="list" onchange="SpellcheckWizard.onSuggestionSelected(); return false;">
+			   </select>
+            </td>
+            <td class="buttonCell">
+                <button class="button" id="add" onclick="SpellcheckWizard.onAdd(); return false;" >
+                	<label for="add">{#spellchecker_dlg.add}</label>
+                </button>
+                <button class="button" id="undo" onclick="SpellcheckWizard.onUndo(); return false;" >
+                	<label for="undo">{#spellchecker_dlg.undo}</label>
+                </button>
+            </td>
+        </tr>
+        <tr class="addWordsTo labelRow">
+            <td class="labelCell">
+               <label for="spellcheckwizard_addwordsto">{#spellchecker_dlg.addwordsto}</label>
+            </td>
+        </tr>
+        <tr class="addWordsTo controlRow">
+            <td class="componentCell">
+               <select id="spellcheckwizard_addwordsto" name="spellcheckwizard_addwordsto" class="optionMenu" onchange="return false;"></select>
+            </td>
+            <td class="buttonCell">
+                <button id="cancel" value="" onclick="SpellcheckWizard.onClose(); return false;" >
+                	<label for="cancel">{#spellchecker_dlg.cancel}</label>
+                </button>
+            </td>
+        </tr>
+	</table>
+</form>
+</body>
+</html>
