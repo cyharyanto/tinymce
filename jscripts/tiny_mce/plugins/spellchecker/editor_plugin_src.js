@@ -664,7 +664,7 @@
 			each(dom.select('span').reverse(), function(n) {
 				if (n && (dom.hasClass(n, 'mceItemHiddenSpellWord') ||
 					dom.hasClass(n, 'mceItemHidden') ||
-					(dom.hasClass(n, 'mceItemHiddenSpellWordTag')))) {
+					(dom.hasClass(n, 'mceItemHiddenSpellWordWizard')))) {
 					// Also remove those used by the wizard (spellwordtag)
 					if (!w || t.findWord(n) == w)
 						dom.remove(n, 1);
@@ -763,7 +763,7 @@
 								// With the spellcheck wizard, the underline is hidden
 								// and only shown when the wizard is pointing to current
 								// misspelling
-								elem.appendChild(dom.create('span', {'class' : 'mceItemHiddenSpellWordTag'}, txt));
+								elem.appendChild(dom.create('span', {'class' : 'mceItemHiddenSpellWordWizard'}, txt));
 							} else {
 								// Else just underline the misspelt words
 								elem.appendChild(dom.create('span', {'class' : 'mceItemHiddenSpellWord'}, txt));
@@ -1209,7 +1209,7 @@
 			
 			this._walk(ed.getBody(), function(n) {
 				if (n.nodeType == 3 && n.parentNode) {
-					if (dom.hasClass(n.parentNode, 'mceItemHiddenSpellWordTag')) {
+					if (dom.hasClass(n.parentNode, 'mceItemHiddenSpellWordWizard')) {
 						nodes.push(n);
 					}
 				}
@@ -1373,8 +1373,13 @@
 		 },
 		 
 		/**
-		 * DEPRECATED FUNCTIONS
+		 * UTILITY FUNCTIONS
 		 * From TinyMCE 3.4.2 Ciboodle
+		 *
+		 * Those functions were previously useful to the original wizard and
+		 * currently no longer being used by the new wizard design. The other
+		 * functions which were tightly tied to the original wizard were removed.
+		 *
 		 */
 		_replaceNodeWithText : function(node,v) {
             var dom = this.editor.dom;
@@ -1519,82 +1524,6 @@
 			return o;
 		},
 
-		_spellcheckCommand : function(ui, params) {
-			var t = this;
-			var suppressAlerts;
-			if(params) {
-				suppressAlerts = !!params.suppressAlerts;
-			}
-			t._spellcheck(suppressAlerts);                
-		},
-		
-		_spellcheck : function(suppressAlerts) {
-			var t = this;
-			var ed = t.editor;
-			
-			if (t.rpcUrl == '{backend}') {
-				// Enable/disable native spellchecker
-				ed.getBody().spellcheck = t.active = !t.active;
-				return;
-			}
-			
-			if (!t.active) {
-				t._startSpellcheck(suppressAlerts);
-			} else {
-				t._endSpellcheck();
-			}
-		},
-		
-		_startSpellcheck : function(suppressAlerts) {
-			var t = this;
-			var ed = t.editor;
-			var rpcHandler;
-			
-			t._callSpellcheckStartCallback();
-			
-			var reportNoMisspellings = ed.getParam('spellchecker_report_no_misspellings', true);
-			
-			if(t.useWizard) {
-				rpcHandler = function(r) {
-					var hasMisspellings = r.length > 0;
-					if (hasMisspellings) {
-						t.active = 1;
-						t._spellcheckWizard(r);
-					}
-					else {
-						if(reportNoMisspellings && !suppressAlerts) {
-							ed.windowManager.alert('spellchecker.no_mpell');
-						}
-						t._callSpellcheckCompleteCallback(false);
-					}
-				};
-			}
-			else {
-				ed.setProgressState(1);
-				rpcHandler = function(r) {
-					var hasMisspellings = r.length > 0;
-					if (hasMisspellings) {
-						t.active = 1;
-						t._markWords(r);
-						ed.setProgressState(0);
-						ed.nodeChanged();
-					} else {
-						ed.setProgressState(0);
-						if(reportNoMisspellings && !suppressAlerts) {
-							ed.windowManager.alert('spellchecker.no_mpell');
-						}
-						t._callSpellcheckCompleteCallback(false);
-					}
-				};
-			}
-			t.checkWords(rpcHandler);
-		},
-		
-		_endSpellcheck : function() {
-			var t = this;
-			t._done();
-		},
-
 		checkWords : function(callbackFunc) {
 			var t = this;
 			var allWords = t._getWords();
@@ -1602,7 +1531,7 @@
 		}
 		
 		/**
-		 * END OF DEPRECATED FUNCTIONS
+		 * END OF UTILITY FUNCTIONS
 		 * From TinyMCE 3.4.2 Ciboodle
 		 */
 		

@@ -555,6 +555,8 @@ WordWrapper.prototype.mark = function() {
 	for (var i = 0; i < this.nodes.length; ++i) {
 		dom.addClass(this.nodes[i].parentNode, "mceItemHiddenSpellWord");
 	}
+	this.plugin.editor.selection.collapse(false);
+	this.pointerNode.parentNode.scrollIntoView(false);
 }
 
 WordWrapper.prototype.unmark = function() {
@@ -639,7 +641,7 @@ var IgnoreOperation = function(wordWrapper) {
 IgnoreOperation.prototype = new Operation();
 
 IgnoreOperation.prototype.undo = function() {
-	// No-op
+	this.wordWrapper.unignore();
 }
 
 var IgnoreAllOperation = function(wordWrapper, ignoredWordWrappers) {

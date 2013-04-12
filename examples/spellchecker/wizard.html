@@ -1,0 +1,52 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>Full featured example</title>
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+
+<!-- TinyMCE -->
+<script type="text/javascript" src="jscripts/tiny_mce/tiny_mce.js"></script>
+<script type="text/javascript">
+	tinyMCE.init({
+		// General options
+		mode : "specific_textareas",
+		editor_selector: "txtEditor_tinymce",
+		theme : "advanced",
+		
+		language : "en",
+		theme : "advanced",
+		width : "100%",
+		fix_list_elements : true,
+		fix_table_elements : true,
+		dialog_type : "modal",
+		removeformat_selector : "span,b,strong,em,i,font,u,strike,sup,sub",
+		spellchecker_languages : "+English=en-GB",
+		spellchecker_use_wizard : true,
+		spellchecker_enable_learn_rpc : true,
+		spellchecker_ignore_urls : false,
+		plugins : "safari,spellchecker,style,table,advimage,searchreplace,contextmenu,paste,directionality,xhtmlxtras,inlinepopups",
+		theme_advanced_buttons1 : "bold,italic,underline,|,justifyleft,justifycenter,justifyright,justifyfull,|,styleselect,fontselect,fontsizeselect",
+		theme_advanced_buttons2 : "cut,copy,paste,|,search,replace,|,bullist,numlist,|,outdent,indent,|,undo,redo,|,image,|,forecolor,backcolor",
+		theme_advanced_buttons3 : "tablecontrols,|,removeformat,|,sub,sup,|,spellchecker",
+		style_formats : [ {title : 'Header 1', inline : 'span', attributes:{'class':'tinyMCEheader1'}}, {title : 'Header 2', inline : 'span', attributes:{'class':'tinyMCEheader2'}}, {title : 'Body', inline : 'span', attributes:{'class':'tinyMCEBody'}} ],
+		content_css : "/GTConnect/css/TinyMCE.css",
+		font_size_style_values : "8pt,10pt,12pt,14pt,18pt,24pt,36pt",
+		theme_advanced_toolbar_location : "top",
+		theme_advanced_toolbar_align : "left",
+		theme_advanced_statusbar_location : "none",
+		theme_advanced_resizing : false,
+		spellchecker_rpc_url : "/spellchecker/rpc.php",
+	});
+</script>
+<!-- /TinyMCE -->
+
+</head>
+	<body role="application">
+		<h3>TinyMCE stand-alone test.</h3>
+
+		<!-- Gets replaced with TinyMCE, remember HTML in a textarea should be encoded -->
+		<div>
+			<textarea class="txtEditor_tinymce" name="txtEditor_tinymce" rows="30" cols="80">			</textarea>
+		</div>
+	</body>
+</html>
